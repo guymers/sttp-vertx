@@ -1,18 +1,17 @@
-package com.softwaremill.sttp
-package vertx
+package com.github.guymers.sttp.vertx
 
 import java.io.File
 import java.io.InputStream
-import java.nio.file.Path
 import java.util.Locale
 
 import scala.collection.JavaConverters._
 import scala.language.higherKinds
-import scala.util.Try
 import scala.util.control.NonFatal
 
 import com.softwaremill.sttp.SttpBackendOptions.ProxyType
-import com.softwaremill.sttp.syntax._
+import com.softwaremill.sttp._
+import com.softwaremill.sttp.internal.SttpFile
+import com.softwaremill.sttp.monadSyntax._
 import io.vertx.core.Vertx
 import io.vertx.core.buffer.Buffer
 import io.vertx.core.file.OpenOptions
@@ -44,10 +43,10 @@ abstract class VertxBackend[R[_], S](
 
     for {
       response <- sendRequest(r)
-      body <- if (codeIsSuccess(response.statusCode())) {
+      body <- if (StatusCodes.isSuccess(response.statusCode())) {
         responseToBody(response, r.response).map(Right(_))
       } else {
-        responseToString(response, Utf8).map(Left(_))
+        readEagerResponse(response).map(_.getBytes).map(Left(_))
       }
     } yield {
       val headers = response
@@ -120,11 +119,11 @@ abstract class VertxBackend[R[_], S](
         case InputStreamBody(is, _) =>
           writeInputStreamToRequest(clientRequest, is, exceptionHandler)
 
-        case PathBody(path, _) =>
-          writePathToRequest(clientRequest, path, exceptionHandler)
+        case FileBody(file, _) =>
+          writeFileToRequest(clientRequest, file.toFile, exceptionHandler)
 
         case StreamBody(s) =>
-          if (!clientRequest.headers().contains(ContentLengthHeader)) {
+          if (!clientRequest.headers().contains(HeaderNames.ContentLength)) {
             clientRequest.setChunked(true)
           }
           writeStreamToRequest(clientRequest, s, exceptionHandler)
@@ -149,13 +148,12 @@ abstract class VertxBackend[R[_], S](
     exceptionHandler(new IllegalStateException("Input streams are blocking, use a streaming body or file instead."))
   }
 
-  private def writePathToRequest(
+  private def writeFileToRequest(
     clientRequest: HttpClientRequest,
-    path: Path,
+    file: File,
     exceptionHandler: Throwable => Unit
   ): Unit = {
-    val file = path.toFile
-    clientRequest.putHeader(ContentLengthHeader, file.length().toString)
+    clientRequest.putHeader(HeaderNames.ContentLength, file.length().toString)
 
     val openOpts = new OpenOptions().setRead(true)
 
@@ -204,13 +202,17 @@ abstract class VertxBackend[R[_], S](
         MAE.unit(())
 
       case ResponseAsString(encoding) =>
-        responseToString(response, encoding)
+        readEagerResponse(response).flatMap { buffer =>
+          val charset = encodingFromResponse(response).getOrElse(encoding)
+
+          MAE.fromTry(Try { buffer.toString(charset) })
+        }
 
       case ResponseAsByteArray =>
         readEagerResponse(response).map(_.getBytes)
 
       case ResponseAsFile(output, overwrite) =>
-        responseToFile(response, output, overwrite)
+        responseToFile(response, output.toFile, overwrite).map(SttpFile.fromFile)
 
       case ras @ ResponseAsStream() =>
         handleResponseAsStream(response).map(ras.responseIsStream)
@@ -226,18 +228,10 @@ abstract class VertxBackend[R[_], S](
 
   protected def readEagerResponse[T](response: HttpClientResponse): R[Buffer]
 
-  private def responseToString(response: HttpClientResponse, encoding: String) = {
-    readEagerResponse(response).flatMap { buffer =>
-      val charset = encodingFromResponse(response).getOrElse(encoding)
-
-      MAE.fromTry(Try { buffer.toString(charset) })
-    }
-  }
-
   private def encodingFromResponse(response: HttpClientResponse) = for {
     headers <- Option(response.headers())
-    contentTypeHeader <- Option(headers.get(ContentTypeHeader))
-    encoding <- encodingFromContentType(contentTypeHeader)
+    contentTypeHeader <- Option(headers.get(HeaderNames.ContentType))
+    encoding <- Export.encodingFromContentType(contentTypeHeader)
   } yield encoding
 
   private def responseToFile(

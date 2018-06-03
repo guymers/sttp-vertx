@@ -1,4 +1,4 @@
-package com.softwaremill.sttp.vertx
+package com.github.guymers.sttp.vertx
 
 import scala.concurrent.duration.TimeUnit
 import scala.concurrent.duration._

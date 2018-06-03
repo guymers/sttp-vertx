@@ -1,5 +1,4 @@
-package com.softwaremill.sttp
-package vertx
+package com.github.guymers.sttp.vertx
 
 import java.nio.ByteBuffer
 
@@ -9,6 +8,7 @@ import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
 
+import com.softwaremill.sttp._
 import com.softwaremill.sttp.impl.monix.TaskMonadAsyncError
 import io.vertx.core.Vertx
 import io.vertx.core.buffer.Buffer
@@ -38,7 +38,7 @@ class VertxMonixBackend private(
   ): Task[Buffer] = {
     Task.create[Buffer] { case (_, cb) =>
 
-      val contentLength = Option(response.getHeader(ContentLengthHeader))
+      val contentLength = Option(response.getHeader(HeaderNames.ContentLength))
         .flatMap(l => Try(l.toInt).toOption)
         .getOrElse(0)
 

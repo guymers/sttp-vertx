@@ -1,4 +1,4 @@
-package com.softwaremill.sttp.vertx
+package com.github.guymers.sttp.vertx
 
 import java.nio.ByteBuffer
 

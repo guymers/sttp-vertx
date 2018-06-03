@@ -1,4 +1,4 @@
-package com.softwaremill.sttp.vertx
+package com.github.guymers.sttp.vertx
 
 import io.vertx.core.Vertx
 import org.scalatest.BeforeAndAfterAll
